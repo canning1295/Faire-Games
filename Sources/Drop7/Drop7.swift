@@ -1514,6 +1514,12 @@ struct Drop7GameView: View {
 
             Spacer()
 
+            Button(action: { showInstructions = true }) {
+                Image(systemName: "info.circle")
+                    .font(.title2)
+                    .foregroundStyle(Color.white)
+            }
+
             Button(action: { showPauseMenu = true }) {
                 Image("pause_circle", bundle: .module)
                     .font(.title2)
