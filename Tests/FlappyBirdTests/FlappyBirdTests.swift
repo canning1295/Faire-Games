@@ -41,6 +41,33 @@ let logger: Logger = Logger(subsystem: "FlappyBird", category: "Tests")
         #expect(restored.isGameOver == true)
     }
 
+    @Test func difficultyLabels() throws {
+        #expect(flappyBirdDifficultyLabel(1) == "Easy")
+        #expect(flappyBirdDifficultyLabel(3) == "Easy")
+        #expect(flappyBirdDifficultyLabel(4) == "Classic")
+        #expect(flappyBirdDifficultyLabel(5) == "Classic")
+        #expect(flappyBirdDifficultyLabel(6) == "Classic")
+        #expect(flappyBirdDifficultyLabel(7) == "Hard")
+        #expect(flappyBirdDifficultyLabel(10) == "Hard")
+        // Out-of-range levels clamp to the nearest tier
+        #expect(flappyBirdDifficultyLabel(0) == "Easy")
+        #expect(flappyBirdDifficultyLabel(99) == "Hard")
+    }
+
+    @Test func difficultyPresets() throws {
+        #expect(flappyBirdDifficultyPresets.map { $0.level } == [2, 5, 8])
+        #expect(flappyBirdDifficultyLabel(2) == "Easy")
+        #expect(flappyBirdDifficultyLabel(5) == "Classic")
+        #expect(flappyBirdDifficultyLabel(8) == "Hard")
+    }
+
+    @Test func newGameKeepsDifficulty() throws {
+        let model = FlappyBirdModel()
+        model.difficulty = 8
+        model.newGame()
+        #expect(model.difficulty == 8)
+    }
+
 }
 
 struct TestData : Codable, Hashable {

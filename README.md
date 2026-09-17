@@ -54,7 +54,7 @@ The classic falling-block game. Guide tetrominoes as they fall, rotate them into
 
 ### Flappy Bird
 
-Tap to flap and navigate a bird through an endless series of pipe obstacles. Features animated wing flapping, procedural pipe generation, and adjustable difficulty (1-10) that controls gravity, flap velocity, pipe speed, gap size, and spacing.
+Tap to flap and navigate a bird through an endless series of pipe obstacles. Features animated wing flapping, procedural pipe generation, and adjustable difficulty (1-10) that controls gravity, flap velocity, pipe speed, gap size, and spacing. Pick Easy, Classic, or Hard (or a custom level) from the start screen, the score header, the pause menu, or the game-over screen.
 
 <img height="500" alt="Faire-Games Flappy Bird Android" src="https://raw.githubusercontent.com/Faire-Games/Faire-Games/refs/heads/main/Android/fastlane/metadata/android/en-US/images/phoneScreenshots/4_en-US.png" /> <img height="500" alt="Faire-Games Flappy Bird iOS" src="https://raw.githubusercontent.com/Faire-Games/Faire-Games/refs/heads/main/Darwin/fastlane/screenshots/en-US/4_en-US.png" />
 

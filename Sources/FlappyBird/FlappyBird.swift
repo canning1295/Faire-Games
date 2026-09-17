@@ -80,6 +80,57 @@ private func effectivePipeSpacing(_ difficulty: Int) -> Double {
     return 280.0 - Double(difficulty - 1) * 14.0
 }
 
+// MARK: - Difficulty Labels
+
+/// Clamps a raw level to the supported 1...10 range.
+public func flappyBirdClampedDifficulty(_ level: Int) -> Int {
+    return min(max(level, 1), 10)
+}
+
+/// Player-facing tier for a 1...10 difficulty level.
+/// Level 5 ("Classic") matches the original game feel.
+public func flappyBirdDifficultyLabel(_ level: Int) -> String {
+    switch flappyBirdClampedDifficulty(level) {
+    case 1...3: return "Easy"
+    case 4...6: return "Classic"
+    default: return "Hard"
+    }
+}
+
+/// One-line description of what a difficulty level changes.
+public func flappyBirdDifficultyDetail(_ level: Int) -> String {
+    switch flappyBirdClampedDifficulty(level) {
+    case 1...3: return "Wide gaps • slow pipes"
+    case 4...6: return "The original feel"
+    default: return "Tight gaps • fast pipes"
+    }
+}
+
+/// Quick-pick preset shown in the difficulty picker.
+public struct FlappyBirdDifficultyPreset: Identifiable {
+    public init(level: Int) { self.level = level }
+    public let level: Int
+    public var id: Int { level }
+    public var label: String { flappyBirdDifficultyLabel(level) }
+    public var detail: String { flappyBirdDifficultyDetail(level) }
+    public var accent: Color {
+        switch flappyBirdClampedDifficulty(level) {
+        case 1...3: return Color(red: 0.35, green: 0.75, blue: 0.45)
+        case 4...6: return Color(red: 0.30, green: 0.60, blue: 0.95)
+        default: return Color(red: 0.95, green: 0.55, blue: 0.15)
+        }
+    }
+}
+
+/// Easy (2), Classic (5), Hard (8) presets.
+public var flappyBirdDifficultyPresets: [FlappyBirdDifficultyPreset] {
+    [
+        FlappyBirdDifficultyPreset(level: 2),
+        FlappyBirdDifficultyPreset(level: 5),
+        FlappyBirdDifficultyPreset(level: 8),
+    ]
+}
+
 // MARK: - Pipe Model
 
 final class PipeData: Identifiable {
@@ -393,6 +444,7 @@ struct FlappyBirdGameView: View {
     @State private var lastTick: Double = 0.0
     @State private var showPauseMenu = false
     @State private var showSettings = false
+    @State private var showDifficultyPicker = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.scenePhase) var scenePhase
     @Environment(FlappyBirdSettings.self) var settings: FlappyBirdSettings
@@ -450,8 +502,13 @@ struct FlappyBirdGameView: View {
                 )
                 .ignoresSafeArea()
 
-                // Game field
+                // Game field — the tap-to-flap gesture lives here (not on the
+                // outer ZStack) so HUD, overlay, and menu buttons don't
+                // accidentally flap when tapped.
                 gameField(width: geo.size.width, height: geo.size.height)
+                    .onTapGesture {
+                        userFlap()
+                    }
 
                 // HUD overlay
                 headerView
@@ -471,11 +528,6 @@ struct FlappyBirdGameView: View {
                 if showPauseMenu && !game.isGameOver {
                     pauseMenuOverlay
                 }
-            }
-            .onTapGesture {
-                if game.isGameOver || showPauseMenu { return }
-                game.flap()
-                playFlapHaptic()
             }
         }
         .navigationBarBackButtonHidden()
@@ -509,6 +561,12 @@ struct FlappyBirdGameView: View {
         .sheet(isPresented: $showSettings) {
             FlappyBirdSettingsView(settings: settings)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showDifficultyPicker) {
+            FlappyBirdDifficultyPickerView(currentLevel: settings.difficulty) { newLevel in
+                applyDifficulty(newLevel)
+            }
+            .presentationDetents([.medium, .large])
         }
         .onChange(of: settings.difficulty) { _, newVal in
             game.difficulty = newVal
@@ -726,13 +784,32 @@ struct FlappyBirdGameView: View {
             }
             Spacer()
 
-            // Score display
-            VStack(spacing: 0) {
+            // Score display + difficulty picker shortcut
+            VStack(spacing: 2) {
                 Text("\(game.score)")
                     .font(.system(size: 40))
                     .fontWeight(.black)
                     .foregroundStyle(Color.white)
                     .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
+
+                Button(action: {
+                    if game.hasStarted && !game.isGameOver { pauseGame() }
+                    showDifficultyPicker = true
+                }) {
+                    HStack(spacing: 4) {
+                        Text(flappyBirdDifficultyLabel(game.difficulty))
+                        Text("\(game.difficulty)")
+                            .monospaced()
+                    }
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.black.opacity(0.35))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
 
             Spacer()
@@ -749,16 +826,42 @@ struct FlappyBirdGameView: View {
 
     var startPrompt: some View {
         VStack(spacing: 16) {
-            Text("TAP TO FLY", bundle: .module)
-                .font(.title)
-                .fontWeight(.black)
-                .foregroundStyle(Color.white)
-                .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
+            // Tapping the prompt itself flaps (starts the run)
+            VStack(spacing: 16) {
+                Text("TAP TO FLY", bundle: .module)
+                    .font(.title)
+                    .fontWeight(.black)
+                    .foregroundStyle(Color.white)
+                    .shadow(color: .black.opacity(0.3), radius: 2, x: 1, y: 1)
 
-            // Bouncing arrow hint
-            Text("\u{25B2}", bundle: .module)
-                .font(.largeTitle)
-                .foregroundStyle(Color.white.opacity(0.7))
+                // Bouncing arrow hint
+                Text("\u{25B2}", bundle: .module)
+                    .font(.largeTitle)
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+            .onTapGesture {
+                userFlap()
+            }
+
+            // Difficulty shortcut — kept outside the tap-to-flap area above
+            // so choosing a difficulty doesn't also flap.
+            Button(action: { showDifficultyPicker = true }) {
+                HStack(spacing: 6) {
+                    Text("Difficulty", bundle: .module)
+                        .foregroundStyle(Color.white.opacity(0.75))
+                    Text(flappyBirdDifficultyLabel(settings.difficulty))
+                        .fontWeight(.bold)
+                    Text("\(settings.difficulty)")
+                        .monospaced()
+                }
+                .font(.subheadline)
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.35))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -800,10 +903,22 @@ struct FlappyBirdGameView: View {
                     Text("Difficulty", bundle: .module)
                         .font(.caption)
                         .foregroundStyle(Color.white.opacity(0.6))
-                    Text("\(game.difficulty)")
+                    Button(action: { showDifficultyPicker = true }) {
+                        HStack(spacing: 6) {
+                            Text("\(game.difficulty)")
+                                .monospaced()
+                            Text(verbatim: "•")
+                            Text(flappyBirdDifficultyLabel(game.difficulty))
+                        }
                         .font(.title3)
                         .fontWeight(.bold)
                         .foregroundStyle(Color.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 if game.score >= game.highScore && game.score > 0 {
@@ -895,6 +1010,16 @@ struct FlappyBirdGameView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color(red: 0.30, green: 0.55, blue: 0.95))
 
+                Button(action: { showDifficultyPicker = true }) {
+                    Text("Difficulty", bundle: .module)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                        .frame(width: 160)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+
                 Button(action: { showSettings = true }) {
                     Text("Settings", bundle: .module)
                         .font(.headline)
@@ -945,6 +1070,28 @@ struct FlappyBirdGameView: View {
     func resumeGame() {
         showPauseMenu = false
         startTimer()
+    }
+
+    /// Single tap-to-flap entry point, shared by the game field and the
+    /// start-screen prompt. Ignored while menus or sheets are up.
+    func userFlap() {
+        if game.isGameOver || showPauseMenu || showDifficultyPicker || showSettings { return }
+        game.flap()
+        playFlapHaptic()
+    }
+
+    /// Applies a new difficulty level and starts a fresh round so the pipe
+    /// gap, speed, and physics stay consistent (changing them mid-flight
+    /// would warp the pipes already on screen).
+    func applyDifficulty(_ level: Int) {
+        let clamped = flappyBirdClampedDifficulty(level)
+        settings.difficulty = clamped
+        game.difficulty = clamped
+        FlappyBirdModel.clearSavedState()
+        game.newGame()
+        showPauseMenu = false
+        startTimer()
+        playHaptic(.snap)
     }
 
     // MARK: - Timer
@@ -1066,7 +1213,171 @@ public struct FlappyBirdPreviewIcon: View {
     }
 }
 
+// MARK: - Difficulty Picker
+
+/// Sheet for choosing a difficulty preset or a custom 1...10 level.
+/// Selecting anything starts a fresh round via `onSelect` so pipe gap,
+/// speed, and physics stay consistent with the pipes on screen.
+struct FlappyBirdDifficultyPickerView: View {
+    let currentLevel: Int
+    let onSelect: (Int) -> Void
+    @Environment(\.dismiss) var dismiss
+    @State private var customLevel: Double
+
+    init(currentLevel: Int, onSelect: @escaping (Int) -> Void) {
+        self.currentLevel = currentLevel
+        self.onSelect = onSelect
+        _customLevel = State(initialValue: Double(flappyBirdClampedDifficulty(currentLevel)))
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 14) {
+                    Text("Choose Difficulty", bundle: .module)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(Color.white)
+                        .padding(.top, 10)
+
+                    ForEach(flappyBirdDifficultyPresets) { preset in
+                        Button(action: {
+                            onSelect(preset.level)
+                            dismiss()
+                        }) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 8) {
+                                        Text(preset.label)
+                                            .font(.title3)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(Color.white)
+                                        Text("\(preset.level)")
+                                            .font(.caption)
+                                            .fontWeight(.bold)
+                                            .foregroundStyle(Color.white.opacity(0.7))
+                                            .monospaced()
+                                    }
+                                    Text(preset.detail)
+                                        .font(.caption)
+                                        .foregroundStyle(Color.white.opacity(0.6))
+                                }
+                                Spacer()
+                                if flappyBirdDifficultyLabel(currentLevel) == preset.label {
+                                    Text(verbatim: "\u{2713}")
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                        .foregroundStyle(preset.accent)
+                                }
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(preset.accent.opacity(0.18))
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(preset.accent.opacity(0.45), lineWidth: 1.5)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Custom level fine-tuning
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Level", bundle: .module)
+                                .foregroundStyle(Color.white)
+                            Spacer()
+                            HStack(spacing: 6) {
+                                Text("\(Int(customLevel))")
+                                    .monospaced()
+                                Text(verbatim: "•")
+                                Text(flappyBirdDifficultyLabel(Int(customLevel)))
+                            }
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .foregroundStyle(Color.white.opacity(0.8))
+                        }
+                        Slider(
+                            value: $customLevel,
+                            in: 1.0...10.0,
+                            step: 1.0
+                        )
+                        HStack {
+                            Text("Easy", bundle: .module)
+                                .font(.caption2)
+                                .foregroundStyle(Color.white.opacity(0.6))
+                            Spacer()
+                            Text("Hard", bundle: .module)
+                                .font(.caption2)
+                                .foregroundStyle(Color.white.opacity(0.6))
+                        }
+                        Button(action: {
+                            onSelect(Int(customLevel))
+                            dismiss()
+                        }) {
+                            Text("New Game", bundle: .module)
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.blue)
+                    }
+                    .padding(16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.white.opacity(0.08))
+                    )
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 24)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color(red: 0.05, green: 0.06, blue: 0.14).ignoresSafeArea())
+            .navigationTitle(Text("New Game", bundle: .module))
+            #if !os(macOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(action: { dismiss() }) { Text("Cancel", bundle: .module) }
+                        .foregroundStyle(Color.white)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
 // MARK: - Settings
+
+/// Quick-pick preset button used in the Settings difficulty section.
+struct FlappyBirdPresetButton: View {
+    let preset: FlappyBirdDifficultyPreset
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        let foreground: Color = isSelected ? Color.white : Color.primary
+        let background: Color = isSelected ? preset.accent : Color.gray.opacity(0.2)
+        return Button(action: onTap) {
+            Text(preset.label)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(foreground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(background)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 struct FlappyBirdSettingsView: View {
     @Bindable var settings: FlappyBirdSettings
@@ -1104,6 +1415,17 @@ struct FlappyBirdSettingsView: View {
                                 .font(.caption2)
                                 .foregroundStyle(Color.secondary)
                         }
+                        HStack(spacing: 8) {
+                            ForEach(flappyBirdDifficultyPresets) { preset in
+                                FlappyBirdPresetButton(
+                                    preset: preset,
+                                    isSelected: flappyBirdDifficultyLabel(settings.difficulty) == preset.label
+                                ) {
+                                    settings.difficulty = preset.level
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
                     }
                 }
                 .textCase(nil)
