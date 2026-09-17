@@ -491,7 +491,12 @@ struct FlappyBirdGameView: View {
         GeometryReader { geo in
             let _ = initField(geo: geo)
             ZStack {
-                // Sky background
+                // Sky background — full-screen and rendered, so it catches
+                // every tap that falls through the transparent views above
+                // it. This (plus the game-field gesture, which covers taps
+                // landing directly on pipes/bird/ground) is the tap-to-flap
+                // handler; exactly one of the two fires per tap, and HUD or
+                // menu buttons never trigger an accidental flap.
                 LinearGradient(
                     colors: [
                         Color(red: 0.30, green: 0.75, blue: 0.93),
@@ -501,10 +506,12 @@ struct FlappyBirdGameView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
+                .onTapGesture {
+                    userFlap()
+                }
 
-                // Game field — the tap-to-flap gesture lives here (not on the
-                // outer ZStack) so HUD, overlay, and menu buttons don't
-                // accidentally flap when tapped.
+                // Game field — catches taps landing directly on the pipes,
+                // bird, or ground (these never reach the sky below).
                 gameField(width: geo.size.width, height: geo.size.height)
                     .onTapGesture {
                         userFlap()
@@ -932,6 +939,7 @@ struct FlappyBirdGameView: View {
                     FlappyBirdModel.clearSavedState()
                     game.difficulty = settings.difficulty
                     game.newGame()
+                    showPauseMenu = false
                     startTimer()
                     playHaptic(.snap)
                 }) {
