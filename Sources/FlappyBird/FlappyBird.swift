@@ -445,6 +445,8 @@ struct FlappyBirdGameView: View {
     @State private var showPauseMenu = false
     @State private var showSettings = false
     @State private var showDifficultyPicker = false
+    /// Tracks an in-progress flap press so a single touch flaps exactly once.
+    @State private var flapPressActive = false
     @Environment(\.dismiss) var dismiss
     @Environment(\.scenePhase) var scenePhase
     @Environment(FlappyBirdSettings.self) var settings: FlappyBirdSettings
@@ -506,16 +508,12 @@ struct FlappyBirdGameView: View {
                     endPoint: .bottom
                 )
                 .ignoresSafeArea()
-                .onTapGesture {
-                    userFlap()
-                }
+                .gesture(flapPressGesture())
 
                 // Game field — catches taps landing directly on the pipes,
                 // bird, or ground (these never reach the sky below).
                 gameField(width: geo.size.width, height: geo.size.height)
-                    .onTapGesture {
-                        userFlap()
-                    }
+                    .gesture(flapPressGesture())
 
                 // HUD overlay
                 headerView
@@ -846,9 +844,7 @@ struct FlappyBirdGameView: View {
                     .font(.largeTitle)
                     .foregroundStyle(Color.white.opacity(0.7))
             }
-            .onTapGesture {
-                userFlap()
-            }
+            .gesture(flapPressGesture())
 
             // Difficulty shortcut — kept outside the tap-to-flap area above
             // so choosing a difficulty doesn't also flap.
@@ -1086,6 +1082,26 @@ struct FlappyBirdGameView: View {
         if game.isGameOver || showPauseMenu || showDifficultyPicker || showSettings { return }
         game.flap()
         playFlapHaptic()
+    }
+
+    /// Touch-down flap gesture: fires the instant the finger lands instead
+    /// of waiting for lift-off like TapGesture, cutting the perceived input
+    /// delay roughly in half. The flag keeps one touch to exactly one flap
+    /// (drag events after touch-down are ignored until lift-off).
+    /// Attached with plain `.gesture` to background layers only — HUD and
+    /// menu buttons live outside those subtrees, so they keep working and
+    /// never trigger an accidental flap.
+    func flapPressGesture() -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                if !flapPressActive {
+                    flapPressActive = true
+                    userFlap()
+                }
+            }
+            .onEnded { _ in
+                flapPressActive = false
+            }
     }
 
     /// Applies a new difficulty level and starts a fresh round so the pipe
